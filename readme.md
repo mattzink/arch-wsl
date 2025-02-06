@@ -19,7 +19,7 @@ Configures:
 kernelCommandLine = cgroup_no_v1=all systemd.unified_cgroup_hierarchy=1
 ```
 2. Unzip the [archive file](https://github.com/mattzink/arch-wsl/archive/refs/heads/main.zip) from this repo
-3. From a Powershell prompt, run `create-arch-distro.ps1` with desired parameters (see [the script](create-arch.distro.ps1) for all supported parameters)
+3. From a Powershell prompt, run `create-arch-distro.ps1` with desired parameters (see [the script](create-arch-distro.ps1) for all supported parameters)
 ```pwsh
 > .\create-arch-distro.ps1 -DistroName myarch -UserName myuser -Force
 ```
