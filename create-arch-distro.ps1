@@ -3,51 +3,91 @@ param(
     [string]$UserName = "mattzink",
     [string]$WslInstallDir = "$HOME\wsl-disks",
     [switch]$Force,
-    # Find RootFS in Dockerfile: https://gitlab.archlinux.org/archlinux/archlinux-docker/-/blob/releases/Dockerfile.base?ref_type=heads
-    [string]$RootFsUrl = "https://gitlab.archlinux.org/api/v4/projects/10185/packages/generic/rootfs/20250204.0.304931/base-20250204.0.304931.tar.zst",
+    [string]$DockerfileUrl = "https://gitlab.archlinux.org/archlinux/archlinux-docker/-/raw/releases/Dockerfile.base?ref_type=heads",
     [string]$RootFsFilename = "arch-rootfs.tar.zst",    
     [string]$LogoFilename = "archlinux-icon-36x18.sixel"
 )
 
-# Download RootFS image if it doesn't exist
-$rootFsPath = "$PSScriptRoot\$RootFsFilename"
-if (!(Test-Path -Path $rootFsPath)) {
-    Write-Host "Downloading RootFS image to '$rootFsPath'" -ForegroundColor Yellow
-    Invoke-WebRequest -Uri $RootFsUrl -OutFile "$rootFsPath"
+$ErrorActionPreference = "Stop"
+
+function FailOnError {
+    param (
+        [scriptblock]$block
+    )
+    try {
+        $global:LASTEXITCODE = 0
+        Invoke-Command -ScriptBlock $block
+        if ($LASTEXITCODE -ne 0) {
+            throw "Exit code $LASTEXITCODE"
+        }
+    } catch {
+        $blockString = $ExecutionContext.InvokeCommand.ExpandString($block)
+        Write-Error "Command '$blockString' failed: $_"
+    }
 }
 
+function RunWslCommand {
+    param (
+        [string]$command
+    )
+    FailOnError { wsl -d $DistroName --cd ~ -- /bin/bash -c "$command" }
+}
+
+# Download RootFS image if a local cached version doesn't exist
+$rootFsPath = "$PSScriptRoot\$RootFsFilename"
+if (!(Test-Path -Path $rootFsPath)) {
+    # Parse the Dockerfile contents to find the URL of the latest rootfs.tar.zst file
+    $dockerfile = Invoke-WebRequest -Uri "$DockerfileUrl"
+    if (!($dockerfile -imatch 'https://gitlab\.archlinux\.org/api/.*\.tar\.zst')) {
+        Write-Error "No RootFS URL found in Dockerfile"
+    }
+    $rootFsUrl = $matches[0]
+    Write-Host "Downloading RootFS image '$rootFsUrl' to '$rootFsPath'" -ForegroundColor Yellow
+    Invoke-WebRequest -Uri "$rootFsUrl" -OutFile "$rootFsPath"
+}
+
+# Check if the distro already exists
 $wslDistroExists = [bool](wsl --list --quiet | Where-Object {$_.Replace("`0","") -match "^$DistroName`$"})
-if ($wslDistroExists -and $Force) {
-    Write-Host "Removing existing WSL distro '$DistroName'" -ForegroundColor Yellow
-    wsl --unregister $DistroName
+if ($wslDistroExists) {
+    if ($Force) {
+        Write-Host "Removing existing WSL distro '$DistroName'" -ForegroundColor Yellow
+        FailOnError { wsl --unregister $DistroName }
+    }
+    else {
+        Write-Error "WSL distro '$DistroName' already exists, use '-Force' to replace it"
+    }
 }
 
 $wslDistroDir = "$WslInstallDir\$DistroName"
 Write-Host "Creating new WSL distro '$DistroName' in '$wslDistroDir'" -ForegroundColor Yellow
-wsl --import $DistroName "$wslDistroDir" "$rootFsPath" --version 2
+FailOnError { wsl --import $DistroName "$wslDistroDir" "$rootFsPath" --version 2 }
 
 Write-Host "Creating user '$UserName' and setting up environment..." -ForegroundColor Yellow
-wsl -d $DistroName -- bash -c "echo `"LANG=C.UTF-8`" >> /etc/default/locale"
-wsl -d $DistroName -- bash -c "sed -i 's/#Color/Color/' /etc/pacman.conf"
-wsl -d $DistroName -- bash -c "sed -i 's/NoProgressBar/#NoProgressBar/' /etc/pacman.conf"
-wsl -d $DistroName -- bash -c "pacman -Syyuu --noconfirm"
-wsl -d $DistroName -- bash -c "pacman -S --noconfirm sudo"
-wsl -d $DistroName -- bash -c "useradd -m -G wheel $UserName"
-wsl -d $DistroName -- bash -c "sed -i 's/# %wheel ALL=(ALL:ALL) NOPASSWD: ALL/%wheel ALL=(ALL:ALL) NOPASSWD: ALL/' /etc/sudoers"
-wsl -d $DistroName -- bash -c "touch /etc/machine-id"
-wsl -d $DistroName -- bash -c "echo `"[boot]`nsystemd=true`n`n[user]`ndefault=$UserName`n`n[network]`nhostname=$DistroName`n`n[interop]`nenabled=false`nappendWindowsPath=false`" >> /etc/wsl.conf"
-wsl --terminate $DistroName
+RunWslCommand "echo `"LANG=C.UTF-8`" >> /etc/default/locale"
+RunWslCommand "sed -i 's/#Color/Color/' /etc/pacman.conf"
+RunWslCommand "sed -i 's/NoProgressBar/#NoProgressBar/' /etc/pacman.conf"
+RunWslCommand "pacman-key --init && pacman-key --populate"
+RunWslCommand "pacman -Syyuu --noconfirm"
+RunWslCommand "pacman -S --noconfirm sudo"
+RunWslCommand "useradd -m -G wheel $UserName"
+RunWslCommand "sed -i 's/# %wheel ALL=(ALL:ALL) NOPASSWD: ALL/%wheel ALL=(ALL:ALL) NOPASSWD: ALL/' /etc/sudoers"
+RunWslCommand "touch /etc/machine-id"
+RunWslCommand "echo `"[boot]`nsystemd=true`n`n[user]`ndefault=$UserName`n`n[network]`nhostname=$DistroName`n`n[interop]`nenabled=false`nappendWindowsPath=false`" >> /etc/wsl.conf"
+FailOnError { wsl --terminate $DistroName }
 
-Write-Host "Installing yay..." -ForegroundColor Yellow
-wsl -d $DistroName --cd ~ -- bash -c "sudo pacman -S --noconfirm glibc base-devel git"
-wsl -d $DistroName --cd ~ -- bash -c "sudo sed -i 's/ debug lto/ !debug lto/' /etc/makepkg.conf"
-wsl -d $DistroName --cd ~ -- bash -c "(git clone https://aur.archlinux.org/yay.git && cd yay && makepkg -sirc --noconfirm); rm -rf yay"
+# Everything below this point runs as non-root user and with systemd running
+
+Write-Host "Installing yay package manager..." -ForegroundColor Yellow
+RunWslCommand "sudo pacman -S --noconfirm glibc base-devel git"
+RunWslCommand "sudo sed -i 's/ debug lto/ !debug lto/' /etc/makepkg.conf"
+RunWslCommand "(git clone https://aur.archlinux.org/yay.git && cd yay && makepkg -sirc --noconfirm); rm -rf yay"
 
 Write-Host "Installing utilities..." -ForegroundColor Yellow
-wsl -d $DistroName --cd ~ -- bash -c "yay -S --removemake --answerclean A --noconfirm oh-my-posh-bin fastfetch vim"
-wsl -d $DistroName --cd ~ -- bash -c "sudo cp ``wslpath -a `"$PSScriptRoot/$LogoFilename`"`` /usr/share/fastfetch/arch.sixel"
-wsl -d $DistroName --cd ~ -- bash -c "fastfetch --raw /usr/share/fastfetch/arch.sixel --logo-width 35 --logo-height 18 --logo-padding-top 2 --gen-config"
-wsl -d $DistroName --cd ~ -- bash -c "echo '`neval `"\`$(oh-my-posh init bash --config /usr/share/oh-my-posh/themes/tiwahu.omp.json)`"`nfastfetch' >> .bash_profile"
-wsl -d $DistroName --cd ~ -- bash -c "sudo ln -s /usr/sbin/vim /usr/sbin/vi"
+RunWslCommand "yay -S --removemake --answerclean A --noconfirm oh-my-posh-bin fastfetch vim"
+RunWslCommand "sudo cp ``wslpath -a `"$PSScriptRoot/$LogoFilename`"`` /usr/share/fastfetch/arch.sixel"
+RunWslCommand "fastfetch --raw /usr/share/fastfetch/arch.sixel --logo-width 35 --logo-height 18 --logo-padding-top 2 --gen-config"
+RunWslCommand "echo '`neval `"\`$(oh-my-posh init bash --config /usr/share/oh-my-posh/themes/tiwahu.omp.json)`"`nfastfetch' >> .bash_profile"
+RunWslCommand "sudo ln -s /usr/sbin/vim /usr/sbin/vi"
 
-wsl -d $DistroName --cd ~ -- bash -c "yay -Sc --noconfirm && sudo rm -f /var/cache/pacman/pkg/*"
+Write-Host "Clearing package cache..." -ForegroundColor Yellow
+RunWslCommand "yay -Scc --noconfirm && sudo rm -f /var/cache/pacman/pkg/*"
