@@ -1,6 +1,6 @@
 param(
     [string]$DistroName = "arch",
-    [string]$UserName = "mattzink",
+    [string]$UserName = $ENV:UserName.ToLowerInvariant(),
     [string]$WslInstallDir = "$HOME\wsl-disks",
     [switch]$Force,
     [string]$DockerfileUrl = "https://gitlab.archlinux.org/archlinux/archlinux-docker/-/raw/releases/Dockerfile.base?ref_type=heads",
@@ -62,12 +62,13 @@ $wslDistroDir = "$WslInstallDir\$DistroName"
 Write-Host "Creating new WSL distro '$DistroName' in '$wslDistroDir'" -ForegroundColor Yellow
 FailOnError { wsl --import $DistroName "$wslDistroDir" "$rootFsPath" --version 2 }
 
+$UserName = $UserName -replace '[^-a-zA-Z0-9]', '-' -replace '--+', '-'
 Write-Host "Creating user '$UserName' and setting up environment..." -ForegroundColor Yellow
 RunWslCommand "echo `"LANG=C.UTF-8`" >> /etc/default/locale"
 RunWslCommand "sed -i 's/#Color/Color/' /etc/pacman.conf"
 RunWslCommand "sed -i 's/NoProgressBar/#NoProgressBar/' /etc/pacman.conf"
 RunWslCommand "mkdir /etc/pacman.d/hooks"
-RunWslCommand "echo `"[Trigger]`nOperation = Upgrade`nOperation = Install`nOperation = Remove`nType = Package`nTarget = *`n`n[Action]`nDescription = Cleaning pacman cache...`nWhen = PostTransaction`nExec = /usr/sbin/bash -c 'rm -f /var/cache/pacman/pkg/*'`" > /etc/pacman.d/hooks/clean_package_cache.hook" 
+RunWslCommand "echo `"[Trigger]`nOperation = Upgrade`nOperation = Install`nOperation = Remove`nType = Package`nTarget = *`n`n[Action]`nDescription = Cleaning pacman cache...`nWhen = PostTransaction`nExec = /usr/bin/bash -c 'rm -f /var/cache/pacman/pkg/*'`" > /etc/pacman.d/hooks/clean_package_cache.hook" 
 RunWslCommand "pacman-key --init && pacman-key --populate"
 RunWslCommand "pacman -Syyuu --noconfirm"
 RunWslCommand "pacman -S --noconfirm sudo"
@@ -89,7 +90,7 @@ RunWslCommand "yay -S --removemake --answerclean A --noconfirm oh-my-posh-bin fa
 RunWslCommand "sudo cp ``wslpath -a `"$PSScriptRoot/$LogoFilename`"`` /usr/share/fastfetch/arch.sixel"
 RunWslCommand "fastfetch --raw /usr/share/fastfetch/arch.sixel --logo-width 35 --logo-height 18 --logo-padding-top 2 --gen-config"
 RunWslCommand "echo '`neval `"\`$(oh-my-posh init bash --config /usr/share/oh-my-posh/themes/tiwahu.omp.json)`"`nfastfetch' >> .bash_profile"
-RunWslCommand "sudo ln -s /usr/sbin/vim /usr/sbin/vi"
+RunWslCommand "sudo ln -s /usr/bin/vim /usr/bin/vi"
 
 Write-Host "Cleaning up files..." -ForegroundColor Yellow
 RunWslCommand "yay -Scc --noconfirm"
