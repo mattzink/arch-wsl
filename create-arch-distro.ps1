@@ -66,6 +66,8 @@ Write-Host "Creating user '$UserName' and setting up environment..." -Foreground
 RunWslCommand "echo `"LANG=C.UTF-8`" >> /etc/default/locale"
 RunWslCommand "sed -i 's/#Color/Color/' /etc/pacman.conf"
 RunWslCommand "sed -i 's/NoProgressBar/#NoProgressBar/' /etc/pacman.conf"
+RunWslCommand "mkdir /etc/pacman.d/hooks"
+RunWslCommand "echo `"[Trigger]`nOperation = Upgrade`nOperation = Install`nOperation = Remove`nType = Package`nTarget = *`n`n[Action]`nDescription = Cleaning pacman cache...`nWhen = PostTransaction`nExec = /usr/sbin/bash -c 'rm -f /var/cache/pacman/pkg/*'`" > /etc/pacman.d/hooks/clean_package_cache.hook" 
 RunWslCommand "pacman-key --init && pacman-key --populate"
 RunWslCommand "pacman -Syyuu --noconfirm"
 RunWslCommand "pacman -S --noconfirm sudo"
@@ -89,5 +91,6 @@ RunWslCommand "fastfetch --raw /usr/share/fastfetch/arch.sixel --logo-width 35 -
 RunWslCommand "echo '`neval `"\`$(oh-my-posh init bash --config /usr/share/oh-my-posh/themes/tiwahu.omp.json)`"`nfastfetch' >> .bash_profile"
 RunWslCommand "sudo ln -s /usr/sbin/vim /usr/sbin/vi"
 
-Write-Host "Clearing package cache..." -ForegroundColor Yellow
-RunWslCommand "yay -Scc --noconfirm && sudo rm -f /var/cache/pacman/pkg/*"
+Write-Host "Cleaning up files..." -ForegroundColor Yellow
+RunWslCommand "yay -Scc --noconfirm"
+RunWslCommand "sudo rm -rf ~/.cache/go-build ~/.config/go"
