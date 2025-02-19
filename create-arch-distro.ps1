@@ -58,6 +58,12 @@ if ($wslDistroExists) {
     }
 }
 
+# Create distro install directory if needed
+if (-not (Test-Path -Path "$WslInstallDir")) { 
+    Write-Host "Creating directory '$WslInstallDir'" -ForegroundColor Yellow
+    New-Item -Path $WslInstallDir -ItemType Directory
+}
+
 $wslDistroDir = "$WslInstallDir\$DistroName"
 Write-Host "Creating new WSL distro '$DistroName' in '$wslDistroDir'" -ForegroundColor Yellow
 FailOnError { wsl --import $DistroName "$wslDistroDir" "$rootFsPath" --version 2 }
