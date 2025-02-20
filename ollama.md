@@ -1,14 +1,14 @@
-# Running local AI LLM models using Ollama+Open-WebUI
+# Running local LLMs using Ollama
 
 Just capturing my notes to run a local LLM model on my Arch WSL distro.
 
 The components I'm using are
 - `Ollama` with CUDA support to serve LLM models from my Nvidia GPU
 - `Open WebUI` as the web front end to interact and download models
-    - Uses Podman as the container host, using the crun runtime
+    - Uses `Podman` as the container host with the `crun` runtime
 - `Btop` to monitor the CPU/GPU utilization
 
-## Steps
+## WSL Configuration Steps
 
 1. Install packages
 
@@ -65,10 +65,17 @@ The components I'm using are
 ## Using Ollama as a code assistant in VSCode
 
 After configuring WSL as above, you can use it to provide code assistance within Visual Studio Code.
+ 
+1. If you are running VS Code on a machine other the WSL host, add a **Hyper-V** firewall rule to allow incoming connections.
 
-1. Install the [Continue extension](https://marketplace.visualstudio.com/items?itemName=Continue.continue) for VSCode.
+    From an **<ins>Admin Elevated</ins>** Powershell prompt on the WSL host:
+    ```pwsh
+    New-NetFirewallHyperVRule -Name "WSLOllama" -DisplayName "WSL Ollama" -Direction Inbound -VMCreatorId '{40E0AC32-46A5-438A-A0B2-2B479E8F2E90}' -Protocol TCP -LocalPorts 11434
+    ```
 
-2. Edit Continue's `config.json` file to use your local Ollama with appropriate models:
+2. Install the [Continue extension](https://marketplace.visualstudio.com/items?itemName=Continue.continue) for VSCode.
+
+3. Edit Continue's `config.json` file to use your local Ollama with appropriate models:
     ```json
     {
       "models": [
@@ -89,8 +96,8 @@ After configuring WSL as above, you can use it to provide code assistance within
     }
     ```
 
-    Note that the `apiBase` field should point to your WSL distro's IP address.
-    Unfortunately, you can't just use `localhost` because [Continue replaces it](https://github.com/continuedev/continue/blob/b6436dd84978c348bba942cc16b428dcf4235ed7/core/llm/llms/Ollama.ts#L315) with "127.0.0.1" which doesn't route to WSL. To determine your WSL distro's IP address, run the following command in PowerShell:
+    Note that the `apiBase` field should only be necessary when running VS code outside of the WSL host.
+    To determine your WSL distro's IP address, run the following command in PowerShell:
     ```pwsh
-    wsl -d arch -- ip addr list eth0 `| grep -Po "(?<=inet )[^/]+"
+    wsl -d arch -- ip route get 1 `| grep eth `| cut -d' ' -f7
     ```
